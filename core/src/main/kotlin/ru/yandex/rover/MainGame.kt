@@ -16,82 +16,107 @@ import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.TimeUtils
 
 class MainGame : ApplicationAdapter() {
-    // Основные инструменты для рисовки
+
+    // Вспомогательный класс
+    private enum class ObstacleType { BAG, CONE }
+    private class Obstacle(val type: ObstacleType, val rect: Rectangle)
+
     private lateinit var batch: SpriteBatch
     private lateinit var font: BitmapFont
 
-    // Ресурсы (картинки)
-    private lateinit var roverSheet: Texture
-    private lateinit var obstacleTexture: Texture
+    // Текстуры
+    private lateinit var runSheet: Texture
+    private lateinit var jumpSheet: Texture
+    private lateinit var bagTexture: Texture
+    private lateinit var coneTexture: Texture
 
     // Анимация
     private lateinit var runAnimation: Animation<TextureRegion>
-    private var stateTime = 0f // Время для отслеживания кадров анимации
+    private lateinit var jumpAnimation: Animation<TextureRegion>
+    private var runStateTime = 0f
+    private var jumpStateTime = 0f
 
     // Параметры игры
     private var gameState = 0 // 0 - Играем, 1 - Game Over
     private var score = 0L
     private var startTime = 0L
 
-    // Физика Ровера
-    private val roverRect = Rectangle() // Хитбокс робота
-    private var roverY = 0f // Позиция по Y
-    private var roverVelocityY = 0f // Скорость по вертикали
-    private val GRAVITY = -1200f // Сила тяжести
-    private val JUMP_FORCE = 600f // Сила прыжка
-    private val GROUND_LEVEL = 100f // Уровень земли
+    // Адаптивные размеры (настраиваются в create())
+    private var GROUND_LEVEL = 0f
+    private var ROVER_SIZE = 0f
+    private var OBSTACLE_SIZE = 0f
+
+    // Твои параметры физики
+    private val GRAVITY = -1500f
+    private val JUMP_FORCE = 1300f
+
+    private val roverRect = Rectangle()
+    private var roverY = 0f
+    private var roverVelocityY = 0f
     private var isJumping = false
 
-    // Препятствия (сугробы или машины)
-    private val obstacles = Array<Rectangle>()
-    private var lastObstacleTime = 0L
+    // Препятствия
+    private val obstacles = Array<Obstacle>()
+    private var nextSpawnTime = 0L
+
+    // Длительность кадра (30 кадров/сек)
+    private val FRAME_DURATION = 1f / 30f
 
     override fun create() {
         batch = SpriteBatch()
-        font = BitmapFont() // Стандартный шрифт
+        font = BitmapFont()
         font.color = Color.BLACK
         font.data.setScale(3f)
 
-        // --- ЗАГРУЗКА СПРАЙТА РОБОТА ---
-        // Допустим, у тебя файл rover_sheet.png, где 4 кадра в ряд
-        roverSheet = Texture("robot_drive_sheet.png")
+        // Твои адаптивные размеры
+        GROUND_LEVEL = Gdx.graphics.height * 0.15f
+        ROVER_SIZE = Gdx.graphics.height * 0.6f
+        OBSTACLE_SIZE = Gdx.graphics.height * 0.25f
 
-        // Разрезаем лист на кадры.
-        // FRAME_COLS - сколько кадров по горизонтали, FRAME_ROWS - по вертикали
-        val FRAME_COLS = 10
-        val FRAME_ROWS = 9
+        // Загрузка Анимации Бега (30 кадров, 6x5)
+        runSheet = Texture("robot_run_sheet.png")
+        // --- ИЗМЕНЕНО: Добавляем фильтрацию ---
+        runSheet.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
 
-        val tmp = TextureRegion.split(
-            roverSheet,
-            roverSheet.width / FRAME_COLS,
-            roverSheet.height / FRAME_ROWS
-        )
+        val RUN_FRAME_COLS = 6
+        val RUN_FRAME_ROWS = 5
+        var tmp = TextureRegion.split(runSheet, runSheet.width / RUN_FRAME_COLS, runSheet.height / RUN_FRAME_ROWS)
+        var frames = tmp.flatten()
+        runAnimation = Animation(FRAME_DURATION, *frames.toTypedArray())
 
-        // Превращаем двумерный массив в одномерный для анимации
-        val walkFrames = arrayOfNulls<TextureRegion>(FRAME_COLS * FRAME_ROWS)
-        var index = 0
-        for (i in 0 until FRAME_ROWS) {
-            for (j in 0 until FRAME_COLS) {
-                walkFrames[index++] = tmp[i][j]
-            }
-        }
+        // Загрузка Анимации Прыжка (90 кадров, 10x9)
+        jumpSheet = Texture("robot_jump_sheet.png")
+        // --- ИЗМЕНЕНО: Добавляем фильтрацию ---
+        jumpSheet.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
 
-        // Создаем анимацию: 0.1f - время показа одного кадра
-        runAnimation = Animation(0.1f, *walkFrames)
+        val JUMP_FRAME_COLS = 10
+        val JUMP_FRAME_ROWS = 9
+        tmp = TextureRegion.split(jumpSheet, jumpSheet.width / JUMP_FRAME_COLS, jumpSheet.height / JUMP_FRAME_ROWS)
+        frames = tmp.flatten()
+        jumpAnimation = Animation(FRAME_DURATION, *frames.toTypedArray())
 
-        // Создаем текстуру препятствия (можно просто красный квадрат для теста)
-        obstacleTexture = Texture("obstacle.png")
+        // Загружаем текстуры препятствий
+        bagTexture = Texture("Bag.png")
+        // --- ИЗМЕНЕНО: Добавляем фильтрацию ---
+        bagTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+
+        coneTexture = Texture("Cone.png")
+        // --- ИЗМЕНЕНО: Добавляем фильтрацию ---
+        coneTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+
 
         // Настройка хитбокса ровера
-        roverRect.width = 200f
-        roverRect.height = 200f
-        roverRect.x = 100f // Ровер всегда слева
+        roverRect.width = ROVER_SIZE - 50
+        roverRect.height = ROVER_SIZE - 50
+        roverRect.x = Gdx.graphics.width * 0.1f
+        roverY = GROUND_LEVEL // Начальная позиция
+        roverRect.y = roverY
 
         startTime = TimeUtils.nanoTime()
+        nextSpawnTime = TimeUtils.nanoTime() + 1500000000L
     }
 
     override fun render() {
-        // Очистка экрана (Белый фон, как снег)
         Gdx.gl.glClearColor(1f, 1f, 1f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
@@ -109,17 +134,22 @@ class MainGame : ApplicationAdapter() {
     }
 
     private fun updateGame(dt: Float) {
-        stateTime += dt
+        if (isJumping) {
+            jumpStateTime += dt
+        } else {
+            runStateTime += dt
+        }
+
         score = (TimeUtils.nanoTime() - startTime) / 100000000
 
         // --- ЛОГИКА ПРЫЖКА ---
-        // Если нажали на экран ИЛИ пробел, и мы на земле -> Прыжок
         if ((Gdx.input.justTouched() || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) && !isJumping) {
             roverVelocityY = JUMP_FORCE
             isJumping = true
+            jumpStateTime = 0f
         }
 
-        // Применяем гравитацию
+        // Применяем твою гравитацию
         roverVelocityY += GRAVITY * dt
         roverY += roverVelocityY * dt
 
@@ -127,57 +157,71 @@ class MainGame : ApplicationAdapter() {
         if (roverY < GROUND_LEVEL) {
             roverY = GROUND_LEVEL
             roverVelocityY = 0f
-            isJumping = false
+            if (isJumping) {
+                isJumping = false
+                runStateTime = 0f
+            }
         }
-
-        // Обновляем хитбокс
         roverRect.y = roverY
 
-        // --- ЛОГИКА ПРЕПЯТСТВИЙ ---
-        // Спавн нового препятствия каждые 1.5 - 3 секунды
-        if (TimeUtils.nanoTime() - lastObstacleTime > 1500000000) {
+        // --- ЛОГИКА СПАВНА ПРЕПЯТСТВИЙ ---
+        if (TimeUtils.nanoTime() > nextSpawnTime) {
             spawnObstacle()
+            // СЛУЧАЙНОЕ ВРЕМЯ СПАВНА
+            nextSpawnTime = TimeUtils.nanoTime() + MathUtils.random(1500000000L, 3000000000L)
         }
 
         // Движение препятствий
         val iter = obstacles.iterator()
         while (iter.hasNext()) {
             val obstacle = iter.next()
-            obstacle.x -= 600f * dt // Скорость движения мира влево
 
-            // Если ушло за экран - удаляем
-            if (obstacle.x + 64 < 0) iter.remove()
+            // --- ИЗМЕНЕНО: Увеличена скорость ---
+            obstacle.rect.x -= 900f * dt // Было 600f
 
-            // Проверка столкновения
-            if (obstacle.overlaps(roverRect)) {
-                gameState = 1 // Game Over
+            if (obstacle.rect.x + obstacle.rect.width < 0) {
+                iter.remove()
+            }
+            if (obstacle.rect.overlaps(roverRect)) {
+                gameState = 1
             }
         }
     }
 
     private fun spawnObstacle() {
-        val obstacle = Rectangle()
-        obstacle.x = Gdx.graphics.width.toFloat()
-        obstacle.y = GROUND_LEVEL
-        obstacle.width = 80f
-        obstacle.height = 80f
-        obstacles.add(obstacle)
-        lastObstacleTime = TimeUtils.nanoTime()
+        val obstacleRect = Rectangle()
+        obstacleRect.x = Gdx.graphics.width.toFloat()
+        obstacleRect.y = GROUND_LEVEL
+
+        // Используем твой адаптивный размер
+        obstacleRect.width = OBSTACLE_SIZE
+        obstacleRect.height = OBSTACLE_SIZE
+
+        // СЛУЧАЙНЫЙ ВЫБОР ТИПА
+        val type = if (MathUtils.randomBoolean()) ObstacleType.BAG else ObstacleType.CONE
+
+        obstacles.add(Obstacle(type, obstacleRect))
     }
 
     private fun drawGame() {
         batch.begin()
 
         if (gameState == 0) {
-            // Получаем текущий кадр анимации
-            // Если прыгаем, можно зафиксировать один кадр, но тут оставим бег
-            val currentFrame = runAnimation.getKeyFrame(stateTime, true)
-
+            val currentFrame: TextureRegion = if (isJumping) {
+                jumpAnimation.getKeyFrame(jumpStateTime, false)
+            } else {
+                runAnimation.getKeyFrame(runStateTime, true)
+            }
             batch.draw(currentFrame, roverRect.x, roverRect.y, roverRect.width, roverRect.height)
 
             // Рисуем препятствия
             for (obstacle in obstacles) {
-                batch.draw(obstacleTexture, obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+                val textureToDraw = if (obstacle.type == ObstacleType.BAG) {
+                    bagTexture
+                } else {
+                    coneTexture
+                }
+                batch.draw(textureToDraw, obstacle.rect.x, obstacle.rect.y, obstacle.rect.width, obstacle.rect.height)
             }
 
             font.draw(batch, "Score: $score", 50f, Gdx.graphics.height - 50f)
@@ -190,19 +234,24 @@ class MainGame : ApplicationAdapter() {
 
     private fun resetGame() {
         roverY = GROUND_LEVEL
+        roverRect.y = roverY
         roverVelocityY = 0f
         isJumping = false
         obstacles.clear()
         score = 0
         startTime = TimeUtils.nanoTime()
         gameState = 0
+        runStateTime = 0f
+        jumpStateTime = 0f
+        nextSpawnTime = TimeUtils.nanoTime() + 1500000000L
     }
 
     override fun dispose() {
-        // Очень важно очищать память!
         batch.dispose()
-        roverSheet.dispose()
-        obstacleTexture.dispose()
+        runSheet.dispose()
+        jumpSheet.dispose()
         font.dispose()
+        bagTexture.dispose()
+        coneTexture.dispose()
     }
 }
