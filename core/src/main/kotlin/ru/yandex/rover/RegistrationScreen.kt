@@ -1,6 +1,7 @@
 package ru.yandex.rover
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input
 import com.badlogic.gdx.ScreenAdapter
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
@@ -23,47 +24,52 @@ class RegistrationScreen(private val game: YandexRoverGame) : ScreenAdapter(), A
 
     override fun show() {
         stage = Stage(ScreenViewport())
-        Gdx.input.inputProcessor = stage // Включаем управление UI
+        Gdx.input.inputProcessor = stage
+        Gdx.input.setCatchKey(Input.Keys.BACK, true)
+
+        game.setMusicTargetVolume(0.3f)
 
         val table = Table()
         table.setFillParent(true)
         table.center()
         stage.addActor(table)
 
-        // Используем Skin из главного класса game
         val skin = game.skin
 
-        // 1. Создаем поля
         usernameField = TextField("", skin)
         usernameField.messageText = "login"
-
         displayField = TextField("", skin)
         displayField.messageText = "display name"
-
         passwordField = TextField("", skin)
         passwordField.messageText = "password"
         passwordField.isPasswordMode = true
-
         registerButton = TextButton("Register", skin)
-
         statusLabel = Label("", skin)
         statusLabel.color = Color.RED
 
-        // 2. Собираем форму
-        table.add(Label("Yandex Rover Registration", skin, "title-white")).colspan(2).padBottom(30f).row()
-        table.add(Label("Username:", skin)).right().pad(10f)
+        // Кнопка назад
+        val backBtn = TextButton("Back", skin)
+        backBtn.addListener(object : ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                game.setScreen(MenuScreen(game))
+            }
+        })
+
+        table.add(Label("Registration", skin)).colspan(2).padBottom(30f).row()
+
+        table.add(Label("User:", skin)).right().pad(10f)
         table.add(usernameField).width(400f).pad(10f).row()
 
-        table.add(Label("Display Name:", skin)).right().pad(10f)
+        table.add(Label("Name:", skin)).right().pad(10f)
         table.add(displayField).width(400f).pad(10f).row()
 
-        table.add(Label("Password:", skin)).right().pad(10f)
+        table.add(Label("Pass:", skin)).right().pad(10f)
         table.add(passwordField).width(400f).pad(10f).row()
 
-        table.add(registerButton).colspan(2).padTop(20f).width(200f).row()
+        table.add(registerButton).colspan(2).padTop(20f).width(200f).height(60f).row()
+        table.add(backBtn).colspan(2).padTop(10f).width(200f).height(60f).row()
         table.add(statusLabel).colspan(2).padTop(10f)
 
-        // 3. Добавляем логику кнопке
         registerButton.addListener(object : ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
                 register()
@@ -80,49 +86,44 @@ class RegistrationScreen(private val game: YandexRoverGame) : ScreenAdapter(), A
             statusLabel.setText("All fields are required.")
             return
         }
-
-        statusLabel.color = Color.WHITE
-        statusLabel.setText("Registering... please wait...")
-        registerButton.isDisabled = true // Блокируем кнопку
-
-        // Вызываем наш ApiClient и ждем ответа (this)
+        statusLabel.color = Color.YELLOW
+        statusLabel.setText("Registering...")
+        registerButton.isDisabled = true
         ApiClient.registerUser(username, displayName, password, this)
     }
 
-    // --- Ответы от ApiClient ---
-
     override fun onSuccess(user: UserResponse) {
-        // Мы в главном потоке, т.к. ApiClient использовал postRunnable
+        // --- ИЗМЕНЕНИЕ: Сохраняем данные пользователя ---
+        game.currentUser = user
+        // ---------------------------------------------
         statusLabel.color = Color.GREEN
-        statusLabel.setText("Success! Welcome, ${user.display_name}. Starting game...")
-
-        // TODO: Тут можно сохранить токен или данные пользователя
-
-        // Переходим на игровой экран
-        game.setScreen(GameScreen(game))
+        statusLabel.setText("Success! Welcome ${user.display_name}")
+        // game.setScreen(MenuScreen(game)) // Можете оставить эту строку, чтобы сразу перейти в меню
     }
 
     override fun onFailure(message: String) {
-        // Мы в главном потоке
         statusLabel.color = Color.RED
         statusLabel.setText("Error: $message")
-        registerButton.isDisabled = false // Разблокируем кнопку
+        registerButton.isDisabled = false
     }
-
 
     override fun render(delta: Float) {
         Gdx.gl.glClearColor(0.2f, 0.2f, 0.2f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.BACK)) {
+            game.setScreen(MenuScreen(game))
+        }
 
         stage.act(delta)
         stage.draw()
     }
 
     override fun hide() {
-        Gdx.input.inputProcessor = null // Выключаем управление UI
+        Gdx.input.inputProcessor = null
     }
 
     override fun dispose() {
-        stage.dispose() // Освобождаем ресурсы экрана
+        stage.dispose()
     }
 }

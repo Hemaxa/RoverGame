@@ -5,9 +5,10 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.ScreenAdapter
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
+import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.Animation
-import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.graphics.g2d.NinePatch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Rectangle
@@ -15,108 +16,115 @@ import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.TimeUtils
 
-// Мы используем ScreenAdapter вместо ApplicationAdapter
 class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
-
-    // --- Сюда скопирован ВЕСЬ твой код из MainGame.kt ---
-    // Единственное изменение: `batch` и `font` мы берем из класса `game`
 
     private enum class ObstacleType { BAG, CONE }
     private class Obstacle(val type: ObstacleType, val rect: Rectangle)
 
-    // Текстуры
     private lateinit var runSheet: Texture
     private lateinit var jumpSheet: Texture
     private lateinit var bagTexture: Texture
     private lateinit var coneTexture: Texture
+    private lateinit var backTexture: Texture
+    private lateinit var midTexture: Texture
+    private lateinit var roadTexture: Texture
+    private lateinit var frontTexture: Texture
+    private lateinit var panelNinePatch: NinePatch
 
-    // Анимация
+    // --- Переменные музыки удалены, используем game.setMusicTargetVolume ---
+
+    private var backX = 0f
+    private var midX = 0f
+    private var roadX = 0f
+    private var frontX = 0f
+
     private lateinit var runAnimation: Animation<TextureRegion>
     private lateinit var jumpAnimation: Animation<TextureRegion>
     private var runStateTime = 0f
     private var jumpStateTime = 0f
 
-    // Параметры игры
-    private var gameState = 0 // 0 - Играем, 1 - Game Over
+    private var gameState = 0
     private var score = 0L
+    private var obstaclesPassedCounter = 0L
     private var startTime = 0L
 
-    // Адаптивные размеры
     private var GROUND_LEVEL = 0f
     private var ROVER_SIZE = 0f
     private var OBSTACLE_SIZE = 0f
 
-    // Физика
-    // <<< ИЗМЕНЕНО: Более сильная гравитация для быстрого падения
     private val GRAVITY = -3000f
-    // <<< ИЗМЕНЕНО: Сила подобрана под новую гравитацию (прыжок ~1.2 сек)
     private val JUMP_FORCE = 1800f
+    private val GAME_SPEED = 1200f
+    private val SPEED_BACK = GAME_SPEED * 0.1f
+    private val SPEED_MID = GAME_SPEED * 0.6f
+    private val SPEED_ROAD = GAME_SPEED
+    private val SPEED_FRONT = GAME_SPEED * 1.25f
 
     private val roverRect = Rectangle()
     private var roverY = 0f
     private var roverVelocityY = 0f
     private var isJumping = false
 
-    // Препятствия
     private val obstacles = Array<Obstacle>()
     private var nextSpawnTime = 0L
-
-    // <<< ИЗМЕНЕНО: Разделяем длительность кадров для бега и прыжка
-    // Анимация бега: 30 кадров, 1 секунда (1 / 30 = 0.0333)
     private val RUN_FRAME_DURATION = 1f / 30f
-    // Анимация прыжка: 90 кадров, 1.2 секунды (1.2 / 90 = 0.0133)
     private val JUMP_FRAME_DURATION = 1.2f / 90f
 
+    private var statsSent = false
 
-    // `create()` из ApplicationAdapter становится `show()` в Screen
     override fun show() {
-        // Настраиваем шрифт из game
+        Gdx.input.setCatchKey(Input.Keys.BACK, true)
         game.font.color = Color.BLACK
-        // game.font.data.setScale(3f) // Это больше не нужно, шрифт генерируется
 
-        // Адаптивные размеры
-        // <<< ИЗМЕНЕНО: Опускаем "землю"
+        // --- МУЗЫКА: Игра началась, включаем громко! ---
+        game.setMusicTargetVolume(1.0f)
+        // -----------------------------------------------
+
         GROUND_LEVEL = Gdx.graphics.height * 0.02f
-        // <<< ИЗМЕНЕНО: Уменьшаем робота
-        //ROVER_SIZE = Gdx.graphics.height * 0.3f
         ROVER_SIZE = Gdx.graphics.height * 0.5f
-
-        // <<< ИЗМЕНЕНО: Уменьшаем препятствия
         OBSTACLE_SIZE = Gdx.graphics.height * 0.2f
 
-        // Загрузка Анимации Бега
+        val radius = 20
+        val size = radius * 2 + 2
+        val pixmap = Pixmap(size, size, Pixmap.Format.RGBA8888)
+        pixmap.setColor(Color.WHITE)
+        pixmap.fillCircle(radius, radius, radius)
+        pixmap.fillCircle(size - radius - 1, radius, radius)
+        pixmap.fillCircle(radius, size - radius - 1, radius)
+        pixmap.fillCircle(size - radius - 1, size - radius - 1, radius)
+        pixmap.fillRectangle(radius, 0, size - 2 * radius, size)
+        pixmap.fillRectangle(0, radius, size, size - 2 * radius)
+        val roundedTexture = Texture(pixmap)
+        pixmap.dispose()
+        panelNinePatch = NinePatch(roundedTexture, radius, radius, radius, radius)
+
         runSheet = Texture("robot_run_sheet.png")
         runSheet.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        val RUN_FRAME_COLS = 6
-        val RUN_FRAME_ROWS = 5
-        var tmp = TextureRegion.split(runSheet, runSheet.width / RUN_FRAME_COLS, runSheet.height / RUN_FRAME_ROWS)
-        var frames = tmp.flatten()
-        // <<< ИЗМЕНЕНО: Используем новую константу
-        runAnimation = Animation(RUN_FRAME_DURATION, *frames.toTypedArray())
+        val runTmp = TextureRegion.split(runSheet, runSheet.width / 6, runSheet.height / 5)
+        runAnimation = Animation(RUN_FRAME_DURATION, *runTmp.flatten().toTypedArray())
 
-        // Загрузка Анимации Прыжка
         jumpSheet = Texture("robot_jump_sheet.png")
         jumpSheet.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        val JUMP_FRAME_COLS = 10
-        val JUMP_FRAME_ROWS = 9
-        tmp = TextureRegion.split(jumpSheet, jumpSheet.width / JUMP_FRAME_COLS, jumpSheet.height / JUMP_FRAME_ROWS)
-        frames = tmp.flatten()
-        // <<< ИЗМЕНЕНО: Используем новую константу (анимация ускорилась)
-        jumpAnimation = Animation(JUMP_FRAME_DURATION, *frames.toTypedArray())
+        val jumpTmp = TextureRegion.split(jumpSheet, jumpSheet.width / 10, jumpSheet.height / 9)
+        jumpAnimation = Animation(JUMP_FRAME_DURATION, *jumpTmp.flatten().toTypedArray())
 
-        // Загружаем текстуры препятствий
         bagTexture = Texture("Bag.png")
         bagTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
         coneTexture = Texture("Cone.png")
         coneTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
 
-        // Настройка хитбокса ровера
-        // (Формула осталась той же, но применится к новому ROVER_SIZE)
-        roverRect.width = ROVER_SIZE * 0.8f
-        roverRect.height = ROVER_SIZE * 0.8f
-        roverRect.x = Gdx.graphics.width * 0.1f
+        backTexture = Texture("back.png")
+        midTexture = Texture("mid.png")
+        roadTexture = Texture("road.png")
+        frontTexture = Texture("front.png")
+        backTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+        midTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+        roadTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+        frontTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
 
-        // Сброс игры при показе экрана
+        roverRect.width = ROVER_SIZE * 0.4f
+        roverRect.height = ROVER_SIZE * 0.6f
+
         resetGame()
     }
 
@@ -124,30 +132,103 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
         Gdx.gl.glClearColor(1f, 1f, 1f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
-        if (gameState == 0) {
-            updateGame(delta) // Используем 'delta' вместо Gdx.graphics.deltaTime
-        } else {
-            if (Gdx.input.justTouched()) {
-                resetGame()
+        // При смене состояния меняем громкость через главный класс
+        when (gameState) {
+            0 -> {
+                // Если играем - громко
+                game.setMusicTargetVolume(1.0f)
+                updateGame(delta)
+            }
+            1 -> {
+                // Game Over - можно потише
+                game.setMusicTargetVolume(0.5f)
+
+                // --- НОВОЕ: Отправка статистики ---
+                if (game.currentUser != null && !statsSent) {
+                    sendGameStats()
+                }
+                // ----------------------------------
+
+                if (Gdx.input.justTouched()) resetGame()
+            }
+            2 -> {
+                // ПАУЗА - тихо
+                game.setMusicTargetVolume(0.3f)
+                if (Gdx.input.isKeyJustPressed(Input.Keys.P)) gameState = 0
             }
         }
+
         drawGame()
     }
 
-    private fun updateGame(dt: Float) {
-        if (isJumping) {
-            jumpStateTime += dt
-        } else {
-            runStateTime += dt
+    // --- НОВАЯ ФУНКЦИЯ: Отправка данных на сервер ---
+    private fun sendGameStats() {
+        // 1. Проверяем, есть ли зарегистрированный пользователь
+        val username = game.currentUser?.username
+        if (username == null) {
+            Gdx.app.log("GameScreen", "User not registered, skipping stat update.")
+            statsSent = true // Чтобы не повторять запрос
+            return
         }
+
+        // 2. Рассчитываем время игры в секундах
+        // Время в наносекундах / 1,000,000,000 = время в секундах
+        val totalPlaytimeSeconds = (TimeUtils.nanoTime() - startTime) / 1000000000L
+
+        Gdx.app.log("GameScreen", "Sending stats: Score=$score, Time=$totalPlaytimeSeconds")
+
+        // 3. Вызываем сетевой клиент
+        ApiClient.updateStats(
+            username,
+            score.toInt(), // Ваш счет уже Long, переводим в Int
+            totalPlaytimeSeconds.toInt(),
+            object : ApiListener {
+                override fun onSuccess(user: UserResponse) {
+                    Gdx.app.log("GameScreen", "Stats updated! New Best Score: ${user.best_score}")
+                    // Опционально, можно обновить game.currentUser новыми данными
+                    game.currentUser = user
+                }
+
+                override fun onFailure(message: String) {
+                    Gdx.app.error("GameScreen", "Failed to update stats: $message")
+                }
+            }
+        )
+        statsSent = true
+    }
+
+    private fun updateGame(dt: Float) {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.P)) {
+            gameState = 2
+            return
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.BACK)) {
+            game.setScreen(MenuScreen(game))
+            return
+        }
+
+        backX -= SPEED_BACK * dt
+        midX -= SPEED_MID * dt
+        roadX -= SPEED_ROAD * dt
+        frontX -= SPEED_FRONT * dt
+
+        if (backX <= -Gdx.graphics.width) backX = 0f
+        if (midX <= -Gdx.graphics.width) midX = 0f
+        if (roadX <= -Gdx.graphics.width) roadX = 0f
+        if (frontX <= -Gdx.graphics.width) frontX = 0f
+
+        if (isJumping) jumpStateTime += dt else runStateTime += dt
         score = (TimeUtils.nanoTime() - startTime) / 100000000
+
         if ((Gdx.input.justTouched() || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) && !isJumping) {
             roverVelocityY = JUMP_FORCE
             isJumping = true
             jumpStateTime = 0f
         }
+
         roverVelocityY += GRAVITY * dt
         roverY += roverVelocityY * dt
+
         if (roverY < GROUND_LEVEL) {
             roverY = GROUND_LEVEL
             roverVelocityY = 0f
@@ -156,23 +237,21 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
                 runStateTime = 0f
             }
         }
-        // Центрируем хитбокс относительно спрайта
-        roverRect.y = roverY + (ROVER_SIZE * 0.1f)
-        roverRect.x = (Gdx.graphics.width * 0.1f) + (ROVER_SIZE * 0.1f)
 
+        roverRect.x = (Gdx.graphics.width * 0.1f) + (ROVER_SIZE * 0.3f)
+        roverRect.y = roverY + (ROVER_SIZE * 0.1f)
 
         if (TimeUtils.nanoTime() > nextSpawnTime) {
             spawnObstacle()
-            // Уменьшаем минимальное время спавна, т.к. игра стала быстрее
             nextSpawnTime = TimeUtils.nanoTime() + MathUtils.random(1200000000L, 2500000000L)
         }
 
-        // Оптимизированный цикл (без GC лагов)
         for (i in obstacles.size - 1 downTo 0) {
             val obstacle = obstacles[i]
-            obstacle.rect.x -= 1200f * dt
+            obstacle.rect.x -= GAME_SPEED * dt
             if (obstacle.rect.x + obstacle.rect.width < 0) {
-                obstacles.removeIndex(i) // Безопасное удаление
+                obstaclesPassedCounter++
+                obstacles.removeIndex(i)
             } else if (obstacle.rect.overlaps(roverRect)) {
                 gameState = 1
             }
@@ -190,35 +269,51 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
     }
 
     private fun drawGame() {
-        game.batch.begin() // Используем game.batch
-        if (gameState == 0) {
-            val currentFrame: TextureRegion = if (isJumping) {
-                // <<< ИЗМЕНЕНО: Ставим `looping = false`
-                // Теперь анимация остановится на последнем кадре, если прыжок вдруг
-                // продлится дольше 1.2 сек (например, при падении с чего-либо)
-                jumpAnimation.getKeyFrame(jumpStateTime, false)
-            } else {
-                // `looping = true` для бега
-                runAnimation.getKeyFrame(runStateTime, true)
-            }
-            // Рисуем изначальный размер, а не хитбокс
+        game.batch.begin()
+
+        fun drawLayer(texture: Texture, x: Float) {
+            game.batch.draw(texture, x, 0f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
+            game.batch.draw(texture, x + Gdx.graphics.width, 0f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
+        }
+
+        drawLayer(backTexture, backX)
+        drawLayer(midTexture, midX)
+        drawLayer(roadTexture, roadX)
+
+        if (gameState == 0 || gameState == 2) {
+            val currentFrame = if (isJumping) jumpAnimation.getKeyFrame(jumpStateTime, false) else runAnimation.getKeyFrame(runStateTime, true)
             game.batch.draw(currentFrame, Gdx.graphics.width * 0.1f, roverY, ROVER_SIZE, ROVER_SIZE)
 
             for (obstacle in obstacles) {
                 val textureToDraw = if (obstacle.type == ObstacleType.BAG) bagTexture else coneTexture
                 game.batch.draw(textureToDraw, obstacle.rect.x, obstacle.rect.y, obstacle.rect.width, obstacle.rect.height)
             }
-
-            // Сдвигаем очки чуть ниже, т.к. шрифт больше
-            game.font.draw(game.batch, "Score: $score", 50f, Gdx.graphics.height - 50f)
-        } else {
-            // Центрируем текст "GAME OVER"
-            game.font.draw(game.batch, "GAME OVER! Tap to restart",
-                0f, Gdx.graphics.height / 2f, // x, y
-                Gdx.graphics.width.toFloat(), // targetWidth
-                Align.center, // Горизонтальное выравнивание
-                false) // Не переносить
         }
+
+        drawLayer(frontTexture, frontX)
+
+        fun drawPanel(x: Float, y: Float, w: Float, h: Float) {
+            game.batch.setColor(1f, 1f, 1f, 0.6f)
+            panelNinePatch.draw(game.batch, x, y, w, h)
+            game.batch.setColor(1f, 1f, 1f, 1f)
+        }
+
+        if (gameState == 0 || gameState == 2) {
+            drawPanel(20f, Gdx.graphics.height - 160f, 400f, 125f)
+            game.font.draw(game.batch, "Score: $score", 50f, Gdx.graphics.height - 50f)
+            game.font.draw(game.batch, "Passed: $obstaclesPassedCounter", 50f, Gdx.graphics.height - 110f)
+
+            if (gameState == 2) {
+                drawPanel(Gdx.graphics.width * 0.2f, Gdx.graphics.height * 0.4f, Gdx.graphics.width * 0.6f, 200f)
+                game.font.draw(game.batch, "PAUSED", 0f, Gdx.graphics.height / 2f + 30f, Gdx.graphics.width.toFloat(), Align.center, false)
+            }
+        } else if (gameState == 1) {
+            drawPanel(Gdx.graphics.width * 0.15f, Gdx.graphics.height * 0.3f, Gdx.graphics.width * 0.7f, 400f)
+            game.font.draw(game.batch, "GAME OVER!", 0f, Gdx.graphics.height / 2f + 120f, Gdx.graphics.width.toFloat(), Align.center, false)
+            game.font.draw(game.batch, "Score: $score", 0f, Gdx.graphics.height / 2f, Gdx.graphics.width.toFloat(), Align.center, false)
+            game.font.draw(game.batch, "Tap to restart", 0f, Gdx.graphics.height / 2f - 100f, Gdx.graphics.width.toFloat(), Align.center, false)
+        }
+
         game.batch.end()
     }
 
@@ -229,19 +324,34 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
         isJumping = false
         obstacles.clear()
         score = 0
+        obstaclesPassedCounter = 0L
         startTime = TimeUtils.nanoTime()
         gameState = 0
         runStateTime = 0f
         jumpStateTime = 0f
         nextSpawnTime = TimeUtils.nanoTime() + 1500000000L
+
+        // --- НОВОЕ: Сброс флага статистики при рестарте ---
+        statsSent = false
+        // -------------------------------------------------
     }
 
-    // `dispose()` из ApplicationAdapter становится `dispose()` в Screen
+    override fun hide() {
+        // Мы больше НЕ останавливаем музыку здесь!
+        // Просто говорим ей стать тихой, так как мы уходим в меню или другой экран
+        game.setMusicTargetVolume(0.3f)
+    }
+
     override fun dispose() {
-        // Освобождаем ТОЛЬКО ресурсы этого экрана
         runSheet.dispose()
         jumpSheet.dispose()
         bagTexture.dispose()
         coneTexture.dispose()
+        backTexture.dispose()
+        midTexture.dispose()
+        roadTexture.dispose()
+        frontTexture.dispose()
+        panelNinePatch.texture.dispose()
+        // Музыку здесь не трогаем, она в Game!
     }
 }
