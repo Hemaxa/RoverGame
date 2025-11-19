@@ -75,6 +75,7 @@ class YandexRoverGame : Game() {
             ApiClient.loginUser(savedUser, savedPass, object : ApiListener {
                 override fun onSuccess(user: UserResponse) {
                     currentUser = user
+                    StatsManager.updateLocalBestScore(user.best_score)
                     Gdx.app.log("Auth", "Auto-login successful: ${user.username}, Best Score: ${user.best_score}")
                 }
 

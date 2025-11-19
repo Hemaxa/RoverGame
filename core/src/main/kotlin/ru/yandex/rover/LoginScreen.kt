@@ -117,10 +117,14 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
 
     override fun onSuccess(user: UserResponse) {
         game.currentUser = user
+
         val prefs = Gdx.app.getPreferences("YandexRoverPrefs")
         prefs.putString("username", user.username)
         prefs.putString("password", passwordField.text)
         prefs.flush()
+
+        //обновляем локальный рекорд данными с сервера
+        StatsManager.updateLocalBestScore(user.best_score)
 
         statusLabel.color = Color.GREEN
         statusLabel.setText("Welcome back, ${user.display_name}!")
