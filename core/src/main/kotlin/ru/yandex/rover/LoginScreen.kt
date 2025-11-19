@@ -11,20 +11,30 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
+import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 
+//LoginScreen - класс формы входа в аккаунт
+//ScreenAdapter — стандартная заготовка экрана в LibGDX
+//ApiListener — интерфейс из ApiClient.kt
 class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListener {
 
-    private lateinit var stage: Stage
+    private lateinit var stage: Stage //контейнер для всех кнопок и полей ввода
+
+    //элементы формы
     private lateinit var usernameField: TextField
     private lateinit var passwordField: TextField
     private lateinit var loginButton: TextButton
     private lateinit var statusLabel: Label
 
+    //метод построения интерфейса
     override fun show() {
         stage = Stage(ScreenViewport())
+
         Gdx.input.inputProcessor = stage
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
+
+        game.setMusicTargetVolume(0.3f)
 
         val table = Table()
         table.setFillParent(true)
@@ -33,23 +43,19 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
 
         val skin = game.skin
 
-        // Поля ввода
+        //инициализация полей
         usernameField = TextField("", skin)
-        usernameField.messageText = "Username"
-        // Исправлено: используем setAlignment вместо присваивания свойства
-        usernameField.setAlignment(com.badlogic.gdx.utils.Align.center)
+        usernameField.setAlignment(Align.center)
 
         passwordField = TextField("", skin)
-        passwordField.messageText = "Password"
         passwordField.isPasswordMode = true
-        // Исправлено: используем setAlignment вместо присваивания свойства
-        passwordField.setAlignment(com.badlogic.gdx.utils.Align.center)
+        passwordField.setAlignment(Align.center)
 
-        loginButton = TextButton("LOG IN", skin)
+        loginButton = TextButton("Log In", skin, "primary")
+
         statusLabel = Label("", skin)
-        statusLabel.setWrap(true) // Чтобы длинный текст ошибки переносился
-        // Исправлено: используем setAlignment вместо присваивания свойства
-        statusLabel.setAlignment(com.badlogic.gdx.utils.Align.center)
+        statusLabel.setWrap(true)
+        statusLabel.setAlignment(Align.center)
 
         val registerBtn = TextButton("Create Account", skin)
         registerBtn.addListener(object : ClickListener() {
@@ -65,34 +71,34 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
             }
         })
 
-        // --- Верстка таблицы ---
+        //верстка таблицы
+        //заголовок
+        table.add(Label("AUTHORIZATION", skin, "header")).colspan(2).padBottom(50f).row()
 
-        // 1. Заголовок (используем стиль header, который добавили в createBasicSkin)
-        table.add(Label("AUTHORIZATION", skin, "header")).colspan(2).padBottom(40f).row()
+        //поле логина
+        table.add(Label("Username", skin)).colspan(2).padBottom(5f).row()
+        table.add(usernameField).colspan(2).width(480f).height(65f).padBottom(15f).row()
 
-        // 2. Поля ввода (делаем их широкими и высокими)
-        table.add(usernameField).colspan(2).width(500f).height(70f).padBottom(20f).row()
-        table.add(passwordField).colspan(2).width(500f).height(70f).padBottom(30f).row()
+        //поле пароля
+        table.add(Label("Password", skin)).colspan(2).padBottom(5f).row()
+        table.add(passwordField).colspan(2).width(480f).height(65f).padBottom(35f).row()
 
-        // 3. Основная кнопка (самая большая)
-        table.add(loginButton).colspan(2).width(300f).height(80f).padBottom(20f).row()
+        //кнопки действий
+        table.add(loginButton).colspan(2).width(450f).height(70f).padBottom(15f).row()
+        table.add(registerBtn).colspan(2).width(450f).height(70f).padBottom(15f).row()
+        table.add(backBtn).colspan(2).width(250f).height(70f).padBottom(15f).row()
 
-        // 4. Дополнительные кнопки
-        table.add(registerBtn).colspan(2).width(250f).height(60f).padBottom(10f).row()
-        table.add(backBtn).colspan(2).width(200f).height(50f).padBottom(20f).row()
-
-        // 5. Статус (растягиваем по ширине, чтобы текст центрировался)
+        //статус
         table.add(statusLabel).colspan(2).width(600f).center()
 
-        // ... листенер кнопки loginButton остается прежним ...
         loginButton.addListener(object : ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                performLogin()
+                login()
             }
         })
     }
 
-    private fun performLogin() {
+    private fun login() {
         val username = usernameField.text
         val password = passwordField.text
 
@@ -106,26 +112,18 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
         statusLabel.setText("Logging in...")
         loginButton.isDisabled = true
 
-        // Отправляем запрос
         ApiClient.loginUser(username, password, this)
     }
 
     override fun onSuccess(user: UserResponse) {
-        // 1. Сохраняем пользователя в игру (оперативная память)
         game.currentUser = user
-
-        // 2. Сохраняем данные в память телефона (чтобы не вводить каждый раз)
         val prefs = Gdx.app.getPreferences("YandexRoverPrefs")
         prefs.putString("username", user.username)
-        // Внимание: хранить пароль в открытом виде небезопасно в продакшене,
-        // но для учебного проекта допустимо. В реальности используют токены.
         prefs.putString("password", passwordField.text)
         prefs.flush()
 
         statusLabel.color = Color.GREEN
         statusLabel.setText("Welcome back, ${user.display_name}!")
-
-        // Переходим в меню через секунду или сразу
         game.screen = MenuScreen(game)
     }
 
@@ -136,7 +134,7 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
     }
 
     override fun render(delta: Float) {
-        Gdx.gl.glClearColor(0.2f, 0.2f, 0.2f, 1f)
+        Gdx.gl.glClearColor(0.15f, 0.15f, 0.2f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.BACK)) {

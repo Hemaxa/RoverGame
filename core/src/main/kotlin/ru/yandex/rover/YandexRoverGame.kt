@@ -15,50 +15,63 @@ import com.badlogic.gdx.scenes.scene2d.ui.Skin
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
 
+//YandexRoverGame - главный класс приложения (точка входа)
 class YandexRoverGame : Game() {
 
-    lateinit var batch: SpriteBatch
-    lateinit var font: BitmapFont
-    lateinit var skin: Skin
+    lateinit var batch: SpriteBatch //объект для отрисовки 2D-графики (рендерит на видеокарте)
+    lateinit var font: BitmapFont //объект обычного шрифта для всего приложения
+    lateinit var headerFont: BitmapFont //объект шрифта для заголовков
+    lateinit var skin: Skin //объект стиля интерфейса для всего приложения
 
+    //глобальная переменная пользователя
     var currentUser: UserResponse? = null
 
-    // --- МУЗЫКА (Глобальная) ---
+    //глобальнаые переменные музыки
     private lateinit var bgMusic: Music
     private var currentVolume = 0f
-    private var targetVolume = 0.3f // По умолчанию тихо (для меню)
+    private var targetVolume = 0.3f
 
+    //метод, вызываемый один раз при создании приложения
     override fun create() {
+        //инициализация отрисовщика
         batch = SpriteBatch()
 
-        // 1. Шрифт
-        val generator = FreeTypeFontGenerator(Gdx.files.internal("font.ttf"))
+        //установка шрифта
+        val generator = FreeTypeFontGenerator(Gdx.files.internal("font.woff"))
         val parameter = FreeTypeFontGenerator.FreeTypeFontParameter()
-        parameter.size = 48
-        parameter.borderWidth = 2f
-        parameter.borderColor = Color.BLACK
+
+        //генерация основного шрифта
+        parameter.size = 48 //размер шрифта
         font = generator.generateFont(parameter)
+
+        //генерирация шрифта для заголовков
+        parameter.size = 96
+        headerFont = generator.generateFont(parameter)
+
         generator.dispose()
 
-        // 2. Скин
+        //определение стиля
         createBasicSkin()
 
-        // 3. Запуск музыки (ОДИН РАЗ)
+        // запуск музыки
         try {
             bgMusic = Gdx.audio.newMusic(Gdx.files.internal("music.mp3"))
             bgMusic.isLooping = true
-            bgMusic.volume = 0f // Начинаем с тишины и плавно нарастаем
+            bgMusic.volume = 0f //начинаем с тишины и плавно нарастаем
             bgMusic.play()
-        } catch (e: Exception) {
+        }
+        catch (e: Exception) {
+            //обработка ошибки отсутствия файла
             Gdx.app.error("MUSIC", "Error loading music.mp3", e)
         }
 
+        //попытка входа в аккаунт (автовход)
         val prefs = Gdx.app.getPreferences("YandexRoverPrefs")
         val savedUser = prefs.getString("username", null)
         val savedPass = prefs.getString("password", null)
 
+        //ссли есть данные в переменной пользователя, то пытаемся войти через сервер
         if (savedUser != null && savedPass != null) {
-            // Пробуем войти тихо
             ApiClient.loginUser(savedUser, savedPass, object : ApiListener {
                 override fun onSuccess(user: UserResponse) {
                     currentUser = user
@@ -67,99 +80,100 @@ class YandexRoverGame : Game() {
 
                 override fun onFailure(message: String) {
                     Gdx.app.error("Auth", "Auto-login failed: $message")
-                    // Если пароль сменился или ошибка, можно очистить префы
-                    // prefs.clear(); prefs.flush()
                 }
             })
         }
 
-        // Запускаем меню
+        //запуск меню
         this.setScreen(MenuScreen(this))
     }
 
-    // Метод, который вызывается каждый кадр во всей игре
+    //метод, который вызывается каждый кадр во всей игре
     override fun render() {
-        super.render() // Рисует текущий экран
+        super.render() //рисует текущий экран (вызывается у каждого текущего украна)
 
-        // Плавное изменение громкости
+        //плавное изменение громкости музыки
         if (::bgMusic.isInitialized) {
             currentVolume = MathUtils.lerp(currentVolume, targetVolume, Gdx.graphics.deltaTime * 2f)
             bgMusic.volume = currentVolume
         }
     }
 
-    // Экраны будут вызывать этот метод, чтобы менять громкость
+    //метод, вызываемый для смены громкости
     fun setMusicTargetVolume(volume: Float) {
         targetVolume = volume
     }
 
+    //метод отрисовки интерфейса
     private fun createBasicSkin() {
         skin = Skin()
-        skin.add("default", font)
 
-        // 1. Генерируем текстуру с закругленными углами (Round Rect)
-        // Это позволит кнопкам и полям быть любого размера, сохраняя красивые углы.
+        //добавление шрифтов
+        skin.add("default", font)
+        skin.add("header", headerFont)
+
+        //плашка статистики игры
+        //генерируется текстура с закругленными углами
         val radius = 20
         val size = radius * 2 + 2
         val pixmap = Pixmap(size, size, Pixmap.Format.RGBA8888)
         pixmap.setColor(Color.WHITE)
 
-        // Рисуем круги по углам
+        //отрисовка кругов по углам
         pixmap.fillCircle(radius, radius, radius)
         pixmap.fillCircle(size - radius - 1, radius, radius)
         pixmap.fillCircle(radius, size - radius - 1, radius)
         pixmap.fillCircle(size - radius - 1, size - radius - 1, radius)
 
-        // Заполняем пространство между ними
+        //превращение в texture
         pixmap.fillRectangle(radius, 0, size - 2 * radius, size)
         pixmap.fillRectangle(0, radius, size, size - 2 * radius)
 
         val roundedTexture = Texture(pixmap)
         pixmap.dispose()
 
-        // Создаем Drawable на основе NinePatch (чтобы тянулось без искажений углов)
-        // Отступы (left, right, top, bottom) равны радиусу
         skin.add("rounded", com.badlogic.gdx.graphics.g2d.NinePatch(roundedTexture, radius, radius, radius, radius))
 
-
-        // 2. Настраиваем стиль LABEL
+        //настройка стиля LABEL
+        //обычный текст
         val labelStyle = Label.LabelStyle()
         labelStyle.font = skin.getFont("default")
-        labelStyle.fontColor = Color.WHITE // По умолчанию белый текст
+        labelStyle.fontColor = Color.WHITE
         skin.add("default", labelStyle)
-        // Добавим стиль для заголовков (желтый)
+
+        //стиль заголовка
         val headerStyle = Label.LabelStyle(labelStyle)
-        headerStyle.fontColor = Color.YELLOW
+        headerStyle.font = skin.getFont("header")
+        headerStyle.fontColor = Color.valueOf("ec003f")
         skin.add("header", headerStyle)
 
-
-        // 3. Настраиваем стиль TEXT BUTTON (Кнопка)
+        //настройка стиля TEXT BUTTON
+        //обычная кнопка
         val textButtonStyle = TextButton.TextButtonStyle()
-        // Обычное состояние - закругленный белый, но немного прозрачный или серый
         textButtonStyle.up = skin.newDrawable("rounded", Color.DARK_GRAY)
-        // Нажатое состояние - потемнее
         textButtonStyle.down = skin.newDrawable("rounded", Color.BLACK)
-        // Состояние "мышь наведена" (если на ПК) или фокус
         textButtonStyle.over = skin.newDrawable("rounded", Color.GRAY)
-        // Текст
         textButtonStyle.font = skin.getFont("default")
         textButtonStyle.fontColor = Color.WHITE
         skin.add("default", textButtonStyle)
 
+        //акцентная кнопка
+        val primaryButtonStyle = TextButton.TextButtonStyle(textButtonStyle) // Копируем настройки обычного
+        primaryButtonStyle.up = skin.newDrawable("rounded", Color.valueOf("ec003f"))
+        primaryButtonStyle.down = skin.newDrawable("rounded", Color.valueOf("b0002f"))
+        skin.add("primary", primaryButtonStyle)
 
-        // 4. Настраиваем стиль TEXT FIELD (Поле ввода)
+        //настройка стиля TEXT FIELD
         val textFieldStyle = TextField.TextFieldStyle()
         textFieldStyle.font = skin.getFont("default")
         textFieldStyle.fontColor = Color.BLACK
-        // Фон поля - белый закругленный
         textFieldStyle.background = skin.newDrawable("rounded", Color.WHITE)
-        // Курсор
+
         val cursorPix = Pixmap(2, 20, Pixmap.Format.RGBA8888)
         cursorPix.setColor(Color.BLACK)
         cursorPix.fill()
         textFieldStyle.cursor = com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(com.badlogic.gdx.graphics.g2d.TextureRegion(Texture(cursorPix)))
 
-        // Выделение текста
         val selectionPix = Pixmap(1, 1, Pixmap.Format.RGBA8888)
         selectionPix.setColor(Color.CYAN)
         selectionPix.fill()
