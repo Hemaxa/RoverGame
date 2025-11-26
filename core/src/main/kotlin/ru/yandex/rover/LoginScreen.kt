@@ -15,25 +15,18 @@ import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 
 //LoginScreen - класс формы входа в аккаунт
-//ScreenAdapter — стандартная заготовка экрана в LibGDX
-//ApiListener — интерфейс из ApiClient.kt
 class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListener {
 
-    private lateinit var stage: Stage //контейнер для всех кнопок и полей ввода
-
-    //элементы формы
+    private lateinit var stage: Stage
     private lateinit var usernameField: TextField
     private lateinit var passwordField: TextField
     private lateinit var loginButton: TextButton
     private lateinit var statusLabel: Label
 
-    //метод построения интерфейса
     override fun show() {
         stage = Stage(ScreenViewport())
-
         Gdx.input.inputProcessor = stage
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
-
         game.setMusicTargetVolume(0.3f)
 
         val table = Table()
@@ -43,7 +36,6 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
 
         val skin = game.skin
 
-        //инициализация полей
         usernameField = TextField("", skin)
         usernameField.setAlignment(Align.center)
 
@@ -71,24 +63,17 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
             }
         })
 
-        //верстка таблицы
-        //заголовок
         table.add(Label("AUTHORIZATION", skin, "header")).colspan(2).padBottom(50f).row()
 
-        //поле логина
         table.add(Label("Username", skin)).colspan(2).padBottom(5f).row()
         table.add(usernameField).colspan(2).width(480f).height(65f).padBottom(15f).row()
 
-        //поле пароля
         table.add(Label("Password", skin)).colspan(2).padBottom(5f).row()
         table.add(passwordField).colspan(2).width(480f).height(65f).padBottom(35f).row()
 
-        //кнопки действий
         table.add(loginButton).colspan(2).width(450f).height(70f).padBottom(15f).row()
         table.add(registerBtn).colspan(2).width(450f).height(70f).padBottom(15f).row()
         table.add(backBtn).colspan(2).width(250f).height(70f).padBottom(15f).row()
-
-        //статус
         table.add(statusLabel).colspan(2).width(600f).center()
 
         loginButton.addListener(object : ClickListener() {
@@ -118,13 +103,17 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
     override fun onSuccess(user: UserResponse) {
         game.currentUser = user
 
+        // Сохраняем данные для авто-входа
+        // (Оставляем это здесь, так как StatsRepository занимается только игровой статистикой)
         val prefs = Gdx.app.getPreferences("YandexRoverPrefs")
         prefs.putString("username", user.username)
         prefs.putString("password", passwordField.text)
         prefs.flush()
 
-        //обновляем локальный рекорд данными с сервера
-        StatsManager.updateLocalBestScore(user.best_score)
+        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        // Обновляем локальные рекорды через наш новый менеджер/репозиторий
+        StatsManager.updateLocalBestScore(user)
+        // -----------------------
 
         statusLabel.color = Color.GREEN
         statusLabel.setText("Welcome back, ${user.display_name}!")

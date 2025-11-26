@@ -69,13 +69,21 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
     //параметры физики
     private val GRAVITY = -3000f //сила гравитации
     private val JUMP_FORCE = 1800f //сила прыжка
-    private val GAME_SPEED = 1200f //скорость игры
+    //private val GAME_SPEED = 1200f //скорость игры
+
+    //настройки баланса
+    private val INITIAL_SPEED = 1200f //начальная скорость
+    private val MAX_SPEED = 2600f //максимальная скорость
+    private val ACCELERATION = 5f //ускорение (на столько пикселей в секунду за секунду времени)
+
+    //текущая скорость игры (теперь это var, так как она меняется)
+    private var gameSpeed = INITIAL_SPEED
 
     //скорости движения слоев фона
-    private val SPEED_BACK = GAME_SPEED * 0.1f
-    private val SPEED_MID = GAME_SPEED * 0.6f
-    private val SPEED_ROAD = GAME_SPEED
-    private val SPEED_FRONT = GAME_SPEED * 1.25f
+    private var speedBack = 0f
+    private var speedMid = 0f
+    private var speedRoad = 0f
+    private var speedFront = 0f
 
     //прямоугольник игрока
     private val roverRect = Rectangle()
@@ -237,11 +245,20 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
             return
         }
 
+        if (gameSpeed < MAX_SPEED) {
+            gameSpeed += ACCELERATION * dt
+        }
+
         //движение фона
-        backX -= SPEED_BACK * dt
-        midX -= SPEED_MID * dt
-        roadX -= SPEED_ROAD * dt
-        frontX -= SPEED_FRONT * dt
+        speedBack = gameSpeed * 0.1f
+        speedMid = gameSpeed * 0.6f
+        speedRoad = gameSpeed
+        speedFront = gameSpeed * 1.25f
+
+        backX -= speedBack * dt
+        midX -= speedMid * dt
+        roadX -= speedRoad * dt
+        frontX -= speedFront * dt
 
         //если фон уехал полностью, его позиция сбрасывается
         if (backX <= -Gdx.graphics.width) backX = 0f
@@ -289,7 +306,7 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
         //движение препятствий и проверка столкновений
         for (i in obstacles.size - 1 downTo 0) {
             val obstacle = obstacles[i]
-            obstacle.rect.x -= GAME_SPEED * dt
+            obstacle.rect.x -= gameSpeed * dt
             if (obstacle.rect.x + obstacle.rect.width < 0) {
                 obstaclesPassedCounter++
                 obstacles.removeIndex(i)
@@ -370,6 +387,7 @@ class GameScreen(private val game: YandexRoverGame) : ScreenAdapter() {
 
     //сброс параметров для начала новой игры
     private fun resetGame() {
+        gameSpeed = INITIAL_SPEED
         roverY = GROUND_LEVEL
         roverRect.y = roverY
         roverVelocityY = 0f
