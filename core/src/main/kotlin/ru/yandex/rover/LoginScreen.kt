@@ -110,10 +110,8 @@ class LoginScreen(private val game: YandexRoverGame) : ScreenAdapter(), ApiListe
         prefs.putString("password", passwordField.text)
         prefs.flush()
 
-        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
         // Обновляем локальные рекорды через наш новый менеджер/репозиторий
         StatsManager.updateLocalBestScore(user)
-        // -----------------------
 
         statusLabel.color = Color.GREEN
         statusLabel.setText("Welcome back, ${user.display_name}!")
